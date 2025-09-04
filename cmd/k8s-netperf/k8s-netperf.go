@@ -41,6 +41,7 @@ var (
 	netperf          bool
 	iperf3           bool
 	uperf            bool
+	ibWriteBw        bool
 	udnl2            bool
 	udnl3            bool
 	udnPluginBinding string
@@ -86,8 +87,11 @@ var rootCmd = &cobra.Command{
 			fmt.Println("OS/Arch:", cmdVersion.OsArch)
 			os.Exit(0)
 		}
-		if !(uperf || netperf || iperf3) {
+		if !(uperf || netperf || iperf3 || ibWriteBw) {
 			log.Fatalf("😭 At least one driver needs to be enabled")
+		}
+		if ibWriteBw && (!privileged || !hostNetOnly) {
+			log.Fatalf("😭 ib_write_bw driver requires both --privileged and --hostNet flags")
 		}
 		uid := ""
 		if len(id) > 0 {
@@ -272,6 +276,12 @@ var rootCmd = &cobra.Command{
 		if iperf3 {
 			requestedDrivers = append(requestedDrivers, "iperf3")
 		}
+		if ibWriteBw {
+			requestedDrivers = append(requestedDrivers, "ib_write_bw")
+		}
+
+		// Set requested drivers after they are defined
+		s.RequestedDrivers = requestedDrivers
 
 		// Run through each test
 		if !s.VM {
@@ -512,6 +522,8 @@ func executeWorkload(nc config.Config,
 			serverIP = s.IperfService.Spec.ClusterIP
 		} else if driverName == "uperf" {
 			serverIP = s.UperfService.Spec.ClusterIP
+		} else if driverName == "ib_write_bw" {
+			serverIP = s.ServerHost.Items[0].Status.PodIP
 		} else {
 			serverIP = s.NetperfService.Spec.ClusterIP
 		}
@@ -578,6 +590,9 @@ func executeWorkload(nc config.Config,
 		} else if driverName == "uperf" {
 			driver = drivers.NewDriver("uperf")
 			npr.Driver = "uperf"
+		} else if driverName == "ib_write_bw" {
+			driver = drivers.NewDriver("ib_write_bw")
+			npr.Driver = "ib_write_bw"
 		} else {
 			driver = drivers.NewDriver("netperf")
 			npr.Driver = "netperf"
@@ -634,6 +649,7 @@ func main() {
 	rootCmd.Flags().BoolVar(&netperf, "netperf", true, "Use netperf as load driver")
 	rootCmd.Flags().BoolVar(&iperf3, "iperf", false, "Use iperf3 as load driver")
 	rootCmd.Flags().BoolVar(&uperf, "uperf", false, "Use uperf as load driver")
+	rootCmd.Flags().BoolVar(&ibWriteBw, "ib-write-bw", false, "Use ib_write_bw as load driver (requires --privileged and --hostNet)")
 	rootCmd.Flags().BoolVar(&clean, "clean", true, "Clean-up resources created by k8s-netperf")
 	rootCmd.Flags().BoolVar(&json, "json", false, "Instead of human-readable output, return JSON to stdout")
 	rootCmd.Flags().BoolVar(&nl, "local", false, "Run network performance tests with Server-Pods/Client-Pods on the same Node")
